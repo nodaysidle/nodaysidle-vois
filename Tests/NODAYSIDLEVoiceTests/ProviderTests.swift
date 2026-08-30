@@ -8,12 +8,14 @@ private actor RequestCapture {
     func value() -> Data? { body }
 }
 
-@Test func deepgramUsesNovaThreeLinearPCMAndIgnoresInterimText() throws {
-    let url = try DeepgramEngine.endpoint(sampleRate: 16_000, channels: 1)
+@Test func deepgramUsesNovaThreeLinearPCMAndIgnoresInterimTextForInsertion() throws {
+    let url = try DeepgramEngine.endpoint(sampleRate: 16_000, channels: 1, language: "it", keyterms: ["Codex", "SwiftData"])
     let components = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false))
-    let query = Dictionary(uniqueKeysWithValues: try #require(components.queryItems).compactMap { item in
-        item.value.map { (item.name, $0) }
-    })
+    let items = try #require(components.queryItems)
+    let query = Dictionary(items.compactMap { item -> (String, String)? in
+        guard item.name != "keyterm", let value = item.value else { return nil }
+        return (item.name, value)
+    }, uniquingKeysWith: { first, _ in first })
 
     #expect(components.scheme == "wss")
     #expect(components.host == "api.deepgram.com")
@@ -22,19 +24,30 @@ private actor RequestCapture {
     #expect(query["sample_rate"] == "16000")
     #expect(query["channels"] == "1")
     #expect(query["interim_results"] == "true")
+    #expect(query["language"] == "it")
+    #expect(items.filter { $0.name == "keyterm" }.compactMap(\.value) == ["Codex", "SwiftData"])
 
     let interim = Data(#"{"type":"Results","is_final":false,"channel":{"alternatives":[{"transcript":"partial"}]}}"#.utf8)
     let final = Data(#"{"type":"Results","is_final":true,"speech_final":true,"channel":{"alternatives":[{"transcript":"Final text."}]}}"#.utf8)
     #expect(try DeepgramEngine.parseResult(interim) == nil)
+    #expect(try DeepgramEngine.parseUpdate(interim) == .interim("partial"))
     #expect(try DeepgramEngine.parseResult(final) == "Final text.")
+    #expect(try DeepgramEngine.parseUpdate(final) == .final("Final text."))
 }
 
-@Test func openRouterSTTBuildsBoundedBase64JSONWithoutPersistingCredential() throws {
+@Test func deepgramInterimNeverCountsAsInsertableFinal() throws {
+    let interim = Data(#"{"type":"Results","is_final":false,"channel":{"alternatives":[{"transcript":"do not paste this"}]}}"#.utf8)
+    let final = Data(#"{"type":"Results","is_final":true,"channel":{"alternatives":[{"transcript":"paste only this"}]}}"#.utf8)
+    #expect(try DeepgramEngine.parseResult(interim) == nil)
+    #expect(try DeepgramEngine.parseUpdate(interim) == .interim("do not paste this"))
+    #expect(try DeepgramEngine.parseResult(final) == "paste only this")
+}
     let request = try OpenRouterSTTEngine.request(
         audio: Data([0, 1, 2, 3]),
         format: "wav",
         model: "openai/whisper-large-v3",
-        credential: "test-token"
+        credential: "test-token",
+        language: "sl"
     )
     let body = try #require(request.httpBody)
     let json = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
@@ -43,6 +56,7 @@ private actor RequestCapture {
     #expect(request.url?.path == "/api/v1/audio/transcriptions")
     #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer test-token")
     #expect(inputAudio["data"] as? String == "AAECAw==")
+    #expect(json["language"] as? String == "sl")
     #expect(!(String(decoding: body, as: UTF8.self).contains("test-token")))
     #expect(throws: ProviderError.unsupportedAudioFormat) {
         _ = try OpenRouterSTTEngine.request(audio: Data(), format: "caf", model: "model", credential: "token")

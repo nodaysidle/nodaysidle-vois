@@ -366,4 +366,17 @@ final class VocabularyStore {
                 }
             }
     }
+
+    /// Hint terms (no replacement) used to bias Whisper / Deepgram recognition.
+    func hints(limit: Int = 100) throws -> [String] {
+        try context.fetch(FetchDescriptor<VocabularyEntry>())
+            .compactMap { entry -> String? in
+                guard entry.replacement == nil else { return nil }
+                let trimmed = entry.term.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.isEmpty ? nil : trimmed
+            }
+            .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+            .prefix(limit)
+            .map { $0 }
+    }
 }

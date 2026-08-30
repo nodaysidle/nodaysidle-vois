@@ -5,6 +5,11 @@ struct RoutedTranscription: Equatable, Sendable {
     let cost: Double?
 }
 
+struct TranscriptionRequest: Equatable, Sendable {
+    var language: String?
+    var vocabularyHints: [String] = []
+}
+
 enum TranscriptionRouterError: Error, Equatable {
     case noStreamingJob
     case deepgramDoesNotAcceptFiles
@@ -41,14 +46,25 @@ actor TranscriptionRouter {
         self.keychain = keychain
     }
 
-    func beginStreamingIfNeeded(engine: TranscriptionEngine, frames: AsyncStream<Data>) throws {
+    func beginStreamingIfNeeded(
+        engine: TranscriptionEngine,
+        frames: AsyncStream<Data>,
+        request: TranscriptionRequest = TranscriptionRequest(),
+        onInterim: (@Sendable (String) -> Void)? = nil
+    ) throws {
         guard engine == .deepgram else { return }
         guard let credential = try keychain.load(account: "deepgram"), !credential.isEmpty else {
             throw ProviderError.missingCredential
         }
         deepgramTask?.cancel()
         deepgramTask = Task { [deepgram] in
-            try await deepgram.transcribe(frames: frames, credential: credential)
+            try await deepgram.transcribe(
+                frames: frames,
+                credential: credential,
+                language: request.language,
+                keyterms: request.vocabularyHints,
+                onInterim: onInterim
+            )
         }
     }
 
@@ -56,13 +72,19 @@ actor TranscriptionRouter {
         recording: AudioRecording,
         engine: TranscriptionEngine,
         localModelID: String,
-        openRouterModel: String
+        openRouterModel: String,
+        request: TranscriptionRequest = TranscriptionRequest()
     ) async throws -> RoutedTranscription {
         switch engine {
         case .localWhisper:
             let installed = try await localModels.installedModel(id: localModelID)
             try await localEngine.load(installed)
-            return RoutedTranscription(text: try await localEngine.transcribe(recording.url), cost: nil)
+            let text = try await localEngine.transcribe(
+                recording.url,
+                language: request.language,
+                vocabularyHints: request.vocabularyHints
+            )
+            return RoutedTranscription(text: text, cost: nil)
         case .deepgram:
             guard let task = deepgramTask else { throw TranscriptionRouterError.noStreamingJob }
             deepgramTask = nil
@@ -76,7 +98,8 @@ actor TranscriptionRouter {
                 audio: audio,
                 format: recording.format,
                 model: openRouterModel,
-                credential: credential
+                credential: credential,
+                language: request.language
             )
             return RoutedTranscription(text: result.text, cost: result.cost)
         }
@@ -86,7 +109,8 @@ actor TranscriptionRouter {
         _ input: FileTranscriptionInput,
         engine: TranscriptionEngine,
         localModelID: String,
-        openRouterModel: String
+        openRouterModel: String,
+        request: TranscriptionRequest = TranscriptionRequest()
     ) async throws -> RoutedTranscription {
         switch engine {
         case .deepgram:
@@ -94,7 +118,12 @@ actor TranscriptionRouter {
         case .localWhisper:
             let installed = try await localModels.installedModel(id: localModelID)
             try await localEngine.load(installed)
-            return RoutedTranscription(text: try await localEngine.transcribe(input.url), cost: nil)
+            let text = try await localEngine.transcribe(
+                input.url,
+                language: request.language,
+                vocabularyHints: request.vocabularyHints
+            )
+            return RoutedTranscription(text: text, cost: nil)
         case .openRouter:
             guard let credential = try keychain.load(account: "openrouter"), !credential.isEmpty else {
                 throw ProviderError.missingCredential
@@ -103,7 +132,8 @@ actor TranscriptionRouter {
                 audio: try Data(contentsOf: input.url, options: .mappedIfSafe),
                 format: input.format,
                 model: openRouterModel,
-                credential: credential
+                credential: credential,
+                language: request.language
             )
             return RoutedTranscription(text: result.text, cost: result.cost)
         }
@@ -117,5 +147,10 @@ actor TranscriptionRouter {
 
     func unloadLocalModel() async {
         await localEngine.unload()
+    }
+
+    func warmLocalModel(id: String) async {
+        guard let installed = try? await localModels.installedModel(id: id) else { return }
+        try? await localEngine.load(installed)
     }
 }

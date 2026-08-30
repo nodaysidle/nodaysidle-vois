@@ -13,6 +13,15 @@ import Testing
     #expect(RecordingState.failed(.microphoneDenied).capsulePresentation == .error)
 }
 
+@Test func capsuleLabelsStayGenericWithoutWorkflowCopy() {
+    #expect(RecordingState.idle.label == "Idle")
+    #expect(RecordingState.arming.label == "Preparing")
+    #expect(RecordingState.recording(startedAt: .distantPast).label == "Recording")
+    #expect(RecordingState.transcribing.label == "Processing")
+    #expect(RecordingState.refining.label == "Processing")
+    #expect(RecordingState.inserting.label == "Processing")
+}
+
 @Test func onlyCapturedOrCompletedStatesOfferRecovery() {
     #expect(!RecordingState.idle.hasRecoverableResult)
     #expect(RecordingState.recording(startedAt: .distantPast).hasRecoverableResult)
@@ -22,14 +31,54 @@ import Testing
     #expect(!RecordingState.failed(.microphoneDenied).hasRecoverableResult)
 }
 
-@Test func capsuleLayoutStaysTinyUntilHoverOrRecoverableError() {
-    #expect(CapsuleLayout(state: .idle, isHovering: false).width == 144)
-    #expect(!CapsuleLayout(state: .recording(startedAt: .distantPast), isHovering: false).showsControls)
-    #expect(CapsuleLayout(state: .recording(startedAt: .distantPast), isHovering: true).width == 236)
-    #expect(CapsuleLayout(state: .recording(startedAt: .distantPast), isHovering: true).showsControls)
-    #expect(CapsuleLayout(state: .failed(.providerUnavailable), isHovering: false).width == 280)
-    #expect(CapsuleLayout(state: .failed(.providerUnavailable), isHovering: false).showsRecovery)
-    #expect(CapsuleLayout(state: .failed(.microphoneDenied), isHovering: false).showsRecovery)
+@Test func capsuleLayoutStaysTinyUntilHoverLiveWordsOrRecoverableError() {
+    #expect(CapsuleLayout(state: .idle, isHovering: false, showsLiveWords: false).width == 144)
+    #expect(!CapsuleLayout(state: .recording(startedAt: .distantPast), isHovering: false, showsLiveWords: false).showsControls)
+    #expect(CapsuleLayout(state: .recording(startedAt: .distantPast), isHovering: true, showsLiveWords: false).width == 268)
+    #expect(CapsuleLayout(state: .recording(startedAt: .distantPast), isHovering: true, showsLiveWords: false).showsControls)
+    #expect(CapsuleLayout(state: .recording(startedAt: .distantPast), isHovering: false, showsLiveWords: true).width == 260)
+    #expect(CapsuleLayout(state: .failed(.providerUnavailable), isHovering: false, showsLiveWords: false).width == 280)
+    #expect(CapsuleLayout(state: .failed(.providerUnavailable), isHovering: false, showsLiveWords: false).showsRecovery)
+    #expect(CapsuleLayout(state: .failed(.microphoneDenied), isHovering: false, showsLiveWords: false).showsRecovery)
+}
+
+@Test func outputLanguageResolvesCapsuleChipCodesForSTT() {
+    #expect(OutputLanguage.resolve("Automatic") == .automatic)
+    #expect(OutputLanguage.resolve("EN").whisperCode == "en")
+    #expect(OutputLanguage.resolve("Italian").deepgramCode == "it")
+    #expect(OutputLanguage.resolve("SL").whisperCode == "sl")
+    #expect(OutputLanguage.resolve("auto").whisperCode == nil)
+    #expect(OutputLanguage.resolve("Automatic").deepgramCode == "multi")
+    #expect(OutputLanguage.resolve("EN").refinementName == "English")
+    #expect(OutputLanguage.resolve("Automatic").refinementName == nil)
+    #expect(OutputLanguage.allCases.map(\.chipLabel) == ["Automatic", "EN", "IT", "SL"])
+}
+
+@Test func deepgramIsPreferredOnlyWhenKeyedAndLocalModelMissing() {
+    #expect(AppCoordinator.shouldPreferDeepgram(
+        keySaved: true,
+        engine: .localWhisper,
+        installedModelIDs: [],
+        selectedLocalModelID: "base"
+    ))
+    #expect(!AppCoordinator.shouldPreferDeepgram(
+        keySaved: true,
+        engine: .localWhisper,
+        installedModelIDs: ["base"],
+        selectedLocalModelID: "base"
+    ))
+    #expect(!AppCoordinator.shouldPreferDeepgram(
+        keySaved: false,
+        engine: .localWhisper,
+        installedModelIDs: [],
+        selectedLocalModelID: "base"
+    ))
+    #expect(!AppCoordinator.shouldPreferDeepgram(
+        keySaved: true,
+        engine: .deepgram,
+        installedModelIDs: [],
+        selectedLocalModelID: "base"
+    ))
 }
 
 @Test func runtimeErrorsMapToActionableRecoveryStates() {

@@ -67,6 +67,8 @@ final class AppCoordinator {
         refreshSecurityState()
         Task {
             await refreshInstalledModels()
+            preferDeepgramWhenKeyedIfNeeded()
+            await warmLocalModelIfNeeded()
             let store = TemporaryAudioStore()
             try? await store.discardExpired(olderThan: .now.addingTimeInterval(-86_400))
         }
@@ -111,7 +113,11 @@ final class AppCoordinator {
         model.chooseVocabularyAction = { [weak self] in self?.chooseVocabularyFile() }
         model.importVocabularyAction = { [weak self] in self?.importVocabulary() }
         model.saveModeAction = { [weak self] in self?.saveMode($0) }
+        model.setOutputLanguageAction = { [weak self] in self?.setOutputLanguage($0) }
         model.assignApplicationRuleAction = { [weak self] in self?.chooseApplication(for: $0) }
+        model.prepareEngineAction = { [weak self] in
+            Task { await self?.warmLocalModelIfNeeded() }
+        }
         model.searchHistoryAction = { [weak self] in self?.searchHistory($0) }
         model.historyTextAction = { [weak self] in try? self?.historyStore.text(for: $0) }
         model.editHistoryAction = { [weak self] id, text in self?.editHistory(id, text: text) }
@@ -156,6 +162,7 @@ final class AppCoordinator {
         currentRecording = nil
         model.lastCompletedText = nil
         model.previewText = nil
+        model.clearInterimTranscript()
         model.audioLevels.removeAll(keepingCapacity: true)
         rememberExternalTarget()
         let target = lastExternalTarget
@@ -164,10 +171,11 @@ final class AppCoordinator {
            let ruleMode = model.modes.first(where: { $0.id == ruleID }) {
             mode = ruleMode
         }
+        let engine = resolveEngine(for: mode)
         let job = Job(
             target: target,
             mode: mode,
-            engine: mode.engine ?? model.selectedEngine,
+            engine: engine,
             insertion: mode.insertion ?? model.insertionBehavior,
             localModelID: model.selectedLocalModelID,
             openRouterModel: model.openRouterSTTModel,
@@ -176,24 +184,36 @@ final class AppCoordinator {
             trigger: trigger
         )
         activeJob = job
+        model.activeTranscriptionEngine = job.engine
         try? hotkeys.registerCancel()
         finishWhenArmed = false
         model.recordingState = .arming
-        model.statusMessage = "Preparing microphone"
+        model.statusMessage = "Preparing"
         if model.hudEnabled { model.setHUDVisible(true) }
 
+        let request = transcriptionRequest(for: mode, engine: engine)
         recordingTask?.cancel()
         recordingTask = Task { [weak self] in
             guard let self else { return }
             do {
                 let session = try await audio.start { [weak model] level in model?.appendAudioLevel(level) }
-                try await router.beginStreamingIfNeeded(engine: job.engine, frames: session.frames)
+                try await router.beginStreamingIfNeeded(
+                    engine: job.engine,
+                    frames: session.frames,
+                    request: request,
+                    onInterim: { [weak self] text in
+                        Task { @MainActor in
+                            guard let self, case .recording = self.model.recordingState else { return }
+                            self.model.interimTranscript = text
+                        }
+                    }
+                )
                 guard !Task.isCancelled else {
                     try? await audio.cancel()
                     return
                 }
                 model.recordingState = .recording(startedAt: .now)
-                model.statusMessage = "Listening"
+                model.statusMessage = "Recording"
                 playSound("Tink")
                 if finishWhenArmed { finish() }
             } catch {
@@ -203,10 +223,58 @@ final class AppCoordinator {
         }
     }
 
+    private func resolveEngine(for mode: DictationMode) -> TranscriptionEngine {
+        if let modeEngine = mode.engine { return modeEngine }
+        return model.selectedEngine
+    }
+
+    private func transcriptionRequest(for mode: DictationMode, engine: TranscriptionEngine? = nil) -> TranscriptionRequest {
+        let language = OutputLanguage.resolve(mode.outputLanguage)
+        let hints = (try? vocabularyStore.hints()) ?? []
+        let resolvedEngine = engine ?? mode.engine ?? model.selectedEngine
+        let code: String? = switch resolvedEngine {
+        case .deepgram: language.deepgramCode
+        case .localWhisper, .openRouter: language.whisperCode
+        }
+        return TranscriptionRequest(
+            language: code,
+            vocabularyHints: resolvedEngine == .openRouter ? [] : hints
+        )
+    }
+
+    /// Prefer Deepgram when a key is already saved and the user is still on Local without an installed model.
+    nonisolated static func shouldPreferDeepgram(
+        keySaved: Bool,
+        engine: TranscriptionEngine,
+        installedModelIDs: Set<String>,
+        selectedLocalModelID: String
+    ) -> Bool {
+        keySaved && engine == .localWhisper && !installedModelIDs.contains(selectedLocalModelID)
+    }
+
+    private func preferDeepgramWhenKeyedIfNeeded() {
+        guard Self.shouldPreferDeepgram(
+            keySaved: model.deepgramKeySaved,
+            engine: model.selectedEngine,
+            installedModelIDs: model.installedModelIDs,
+            selectedLocalModelID: model.selectedLocalModelID
+        ) else { return }
+        model.selectedEngine = .deepgram
+    }
+
+    private func warmLocalModelIfNeeded() async {
+        let engine = model.selectedMode.engine ?? model.selectedEngine
+        guard engine == .localWhisper else { return }
+        guard model.installedModelIDs.contains(model.selectedLocalModelID) else { return }
+        await router.warmLocalModel(id: model.selectedLocalModelID)
+        model.activeModelID = await localEngine.activeModelID
+    }
+
     private func finish() {
         guard let job = activeJob else { return }
         model.recordingState = .transcribing
-        model.statusMessage = "Transcribing"
+        model.statusMessage = "Processing"
+        model.clearInterimTranscript()
         recordingTask?.cancel()
         recordingTask = Task { [weak self] in
             guard let self else { return }
@@ -217,7 +285,8 @@ final class AppCoordinator {
                     recording: recording,
                     engine: job.engine,
                     localModelID: job.localModelID,
-                    openRouterModel: job.openRouterModel
+                    openRouterModel: job.openRouterModel,
+                    request: transcriptionRequest(for: job.mode, engine: job.engine)
                 )
                 try await finishText(result, recording: recording, job: job)
             } catch {
@@ -250,14 +319,14 @@ final class AppCoordinator {
 
     private func processedText(_ rawText: String, job: Job) async throws -> String {
         var text = VocabularyImporter.apply(try vocabularyStore.replacements(), to: rawText)
-        let languageInstruction = job.mode.outputLanguage == "Automatic"
-            ? nil : "Write the result in \(job.mode.outputLanguage)."
+        let language = OutputLanguage.resolve(job.mode.outputLanguage)
+        let languageInstruction = language.refinementName.map { "Write the result in \($0)." }
         let instruction = [job.mode.instruction, languageInstruction].compactMap { $0 }.joined(separator: " ")
         if job.refinementEnabled, !instruction.isEmpty,
            !job.refinementModel.isEmpty,
            let credential = try keychain.load(account: "openrouter") {
             model.recordingState = .refining
-            model.statusMessage = "Polishing"
+            model.statusMessage = "Processing"
             text = await refinement.refine(
                 text,
                 instruction: instruction,
@@ -290,12 +359,13 @@ final class AppCoordinator {
         model.statusMessage = message
         playSound("Pop")
         activeJob = nil
+        model.activeTranscriptionEngine = nil
         successTask?.cancel()
         successTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(700))
             guard !Task.isCancelled, let self else { return }
             model.recordingState = .idle
-            model.statusMessage = "Ready for dictation"
+            model.statusMessage = "Ready"
             if !model.keepHUDVisibleWhenIdle { model.setHUDVisible(false) }
         }
     }
@@ -336,6 +406,7 @@ final class AppCoordinator {
         job.engine = model.selectedEngine
         activeJob = job
         model.recordingState = .transcribing
+        model.statusMessage = "Processing"
         recordingTask = Task { [weak self] in
             guard let self else { return }
             do {
@@ -343,7 +414,8 @@ final class AppCoordinator {
                     recording: recording,
                     engine: job.engine,
                     localModelID: model.selectedLocalModelID,
-                    openRouterModel: model.openRouterSTTModel
+                    openRouterModel: model.openRouterSTTModel,
+                    request: transcriptionRequest(for: job.mode, engine: job.engine)
                 )
                 try await finishText(result, recording: recording, job: job)
             } catch { fail(error, capturedAudio: true) }
@@ -364,8 +436,10 @@ final class AppCoordinator {
         let saved = currentRecording
         currentRecording = nil
         activeJob = nil
+        model.activeTranscriptionEngine = nil
         finishWhenArmed = false
         model.previewText = nil
+        model.clearInterimTranscript()
         model.previewHandler?(false)
         model.recordingState = .idle
         model.statusMessage = "Cancelled"
@@ -405,6 +479,7 @@ final class AppCoordinator {
                 }
                 model.modelDownloadProgress[localModel.id] = nil
                 await refreshInstalledModels()
+                await warmLocalModelIfNeeded()
                 model.statusMessage = "\(localModel.name) verified"
             } catch {
                 model.modelDownloadProgress[localModel.id] = nil
@@ -460,6 +535,7 @@ final class AppCoordinator {
                 trigger: .toggle
             )
             activeJob = job
+            model.activeTranscriptionEngine = job.engine
             let input = try FileTranscriptionService.preflight(url, engine: job.engine)
             model.recordingState = .transcribing
             model.setHUDVisible(true)
@@ -467,7 +543,8 @@ final class AppCoordinator {
                 input,
                 engine: job.engine,
                 localModelID: model.selectedLocalModelID,
-                openRouterModel: model.openRouterSTTModel
+                openRouterModel: model.openRouterSTTModel,
+                request: transcriptionRequest(for: job.mode, engine: job.engine)
             )
             let text = try await processedText(routed.text, job: job)
             model.lastCompletedText = text
@@ -498,13 +575,30 @@ final class AppCoordinator {
             if !model.modes.contains(model.selectedMode) { model.restoreSelectedMode() }
         } catch { model.statusMessage = error.localizedDescription }
         refreshSecurityState()
-        Task { await refreshInstalledModels() }
+        Task {
+            await refreshInstalledModels()
+            preferDeepgramWhenKeyedIfNeeded()
+            await warmLocalModelIfNeeded()
+        }
     }
 
     private func refreshInstalledModels() async {
         let installed = (try? await localModels.installedModels()) ?? []
         model.installedModelIDs = Set(installed.map(\.modelID))
         model.activeModelID = await localEngine.activeModelID
+    }
+
+    private func setOutputLanguage(_ language: OutputLanguage) {
+        model.applyOutputLanguage(language)
+        do {
+            try modeStore.save(model.selectedMode)
+            model.modes = try modeStore.modes()
+            if let updated = model.modes.first(where: { $0.id == model.selectedMode.id }) {
+                model.selectedMode = updated
+            }
+        } catch {
+            model.statusMessage = error.localizedDescription
+        }
     }
 
     private func refreshSecurityState() {
