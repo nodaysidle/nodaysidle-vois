@@ -62,12 +62,38 @@ actor LocalWhisperEngine {
         scheduleUnload()
     }
 
-    func transcribe(_ audioURL: URL) async throws -> String {
+    func transcribe(
+        _ audioURL: URL,
+        language: String? = nil,
+        vocabularyHints: [String] = []
+    ) async throws -> String {
         guard let pipeline else { throw LocalModelError.notInstalled }
         unloadTask?.cancel()
-        let results = try await pipeline.transcribe(
+
+        var options = DecodingOptions(
+            task: .transcribe,
+            language: language,
+            skipSpecialTokens: true,
+            withoutTimestamps: true
+        )
+        if language == nil {
+            options.detectLanguage = true
+            options.usePrefillPrompt = false
+        } else {
+            options.detectLanguage = false
+            options.usePrefillPrompt = true
+        }
+        if !vocabularyHints.isEmpty, let tokenizer = pipeline.tokenizer {
+            let promptText = " " + vocabularyHints.prefix(80).joined(separator: ", ")
+            options.promptTokens = tokenizer.encode(text: promptText)
+                .filter { $0 < tokenizer.specialTokens.specialTokenBegin }
+            options.usePrefillPrompt = true
+        }
+
+        let results: [TranscriptionResult] = try await pipeline.transcribe(
             audioPath: audioURL.path,
-            audioInputOptions: AudioInputOptions(audioLoadingMode: .incremental)
+            audioInputOptions: AudioInputOptions(audioLoadingMode: .incremental),
+            decodeOptions: options
         )
         let text = results.map(\.text).joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)

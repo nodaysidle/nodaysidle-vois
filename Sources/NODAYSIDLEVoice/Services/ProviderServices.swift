@@ -108,7 +108,8 @@ actor OpenRouterSTTEngine {
         audio: Data,
         format: String,
         model: String,
-        credential: String
+        credential: String,
+        language: String? = nil
     ) throws -> URLRequest {
         let normalizedFormat = format.lowercased()
         guard supportedFormats.contains(normalizedFormat) else { throw ProviderError.unsupportedAudioFormat }
@@ -123,10 +124,20 @@ actor OpenRouterSTTEngine {
             let model: String
             let inputAudio: InputAudio
             let temperature: Double
+            let language: String?
             enum CodingKeys: String, CodingKey {
                 case model
                 case inputAudio = "input_audio"
                 case temperature
+                case language
+            }
+
+            func encode(to encoder: Encoder) throws {
+                var container = encoder.container(keyedBy: CodingKeys.self)
+                try container.encode(model, forKey: .model)
+                try container.encode(inputAudio, forKey: .inputAudio)
+                try container.encode(temperature, forKey: .temperature)
+                try container.encodeIfPresent(language, forKey: .language)
             }
         }
 
@@ -138,7 +149,8 @@ actor OpenRouterSTTEngine {
         request.httpBody = try JSONEncoder().encode(Body(
             model: model,
             inputAudio: InputAudio(data: audio.base64EncodedString(), format: normalizedFormat),
-            temperature: 0
+            temperature: 0,
+            language: language
         ))
         return request
     }
@@ -147,9 +159,16 @@ actor OpenRouterSTTEngine {
         audio: Data,
         format: String,
         model: String,
-        credential: String
+        credential: String,
+        language: String? = nil
     ) async throws -> CloudTranscription {
-        let request = try Self.request(audio: audio, format: format, model: model, credential: credential)
+        let request = try Self.request(
+            audio: audio,
+            format: format,
+            model: model,
+            credential: credential,
+            language: language
+        )
         let (data, response) = try await transport(request)
         try Self.validate(response.statusCode)
 
@@ -185,6 +204,11 @@ actor OpenRouterSTTEngine {
 }
 
 actor DeepgramEngine {
+    enum TranscriptUpdate: Equatable, Sendable {
+        case interim(String)
+        case final(String)
+    }
+
     private struct Envelope: Decodable {
         struct Channel: Decodable {
             struct Alternative: Decodable { let transcript: String }
@@ -215,9 +239,14 @@ actor DeepgramEngine {
         self.session = session
     }
 
-    nonisolated static func endpoint(sampleRate: Int, channels: Int) throws -> URL {
+    nonisolated static func endpoint(
+        sampleRate: Int,
+        channels: Int,
+        language: String? = nil,
+        keyterms: [String] = []
+    ) throws -> URL {
         var components = URLComponents(string: "wss://api.deepgram.com/v1/listen")
-        components?.queryItems = [
+        var items: [URLQueryItem] = [
             .init(name: "model", value: "nova-3"),
             .init(name: "encoding", value: "linear16"),
             .init(name: "sample_rate", value: String(sampleRate)),
@@ -227,25 +256,52 @@ actor DeepgramEngine {
             .init(name: "punctuate", value: "true"),
             .init(name: "endpointing", value: "300"),
         ]
+        if let language, !language.isEmpty {
+            items.append(.init(name: "language", value: language))
+        }
+        for term in keyterms.prefix(100) {
+            let trimmed = term.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            items.append(.init(name: "keyterm", value: trimmed))
+        }
+        components?.queryItems = items
         guard let url = components?.url else { throw ProviderError.invalidURL }
         return url
     }
 
+    /// Finals only — used for insertable text. Interims return `nil`.
     nonisolated static func parseResult(_ data: Data) throws -> String? {
+        switch try parseUpdate(data) {
+        case .final(let text): return text
+        case .interim, .none: return nil
+        }
+    }
+
+    nonisolated static func parseUpdate(_ data: Data) throws -> TranscriptUpdate? {
         let envelope = try JSONDecoder().decode(Envelope.self, from: data)
-        guard envelope.type == "Results", envelope.isFinal == true else { return nil }
+        guard envelope.type == "Results" else { return nil }
         let text = envelope.channel?.alternatives.first?.transcript
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return text.isEmpty ? nil : text
+        guard !text.isEmpty else { return nil }
+        if envelope.isFinal == true { return .final(text) }
+        return .interim(text)
     }
 
     func transcribe(
         frames: AsyncStream<Data>,
         credential: String,
-        timeout: Duration = .seconds(45)
+        language: String? = nil,
+        keyterms: [String] = [],
+        timeout: Duration = .seconds(45),
+        onInterim: (@Sendable (String) -> Void)? = nil
     ) async throws -> String {
         guard !credential.isEmpty else { throw ProviderError.missingCredential }
-        var request = URLRequest(url: try Self.endpoint(sampleRate: 16_000, channels: 1))
+        var request = URLRequest(url: try Self.endpoint(
+            sampleRate: 16_000,
+            channels: 1,
+            language: language,
+            keyterms: keyterms
+        ))
         request.setValue("Token \(credential)", forHTTPHeaderField: "Authorization")
         let task = session.webSocketTask(with: request)
         activeTask = task
@@ -282,10 +338,13 @@ actor DeepgramEngine {
                     }
                     let envelope = try JSONDecoder().decode(Envelope.self, from: data)
                     if envelope.type == "Error" { throw ProviderError.unavailable }
-                    if envelope.isFinal == true,
-                       let text = envelope.channel?.alternatives.first?.transcript
-                        .trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
-                        parts.append(text)
+                    if let update = try Self.parseUpdate(data) {
+                        switch update {
+                        case .interim(let text):
+                            onInterim?(text)
+                        case .final(let text):
+                            parts.append(text)
+                        }
                     }
                     if envelope.fromFinalize == true {
                         return .transcript(parts.joined(separator: " "))

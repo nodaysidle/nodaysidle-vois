@@ -6,10 +6,16 @@ struct CapsuleLayout: Equatable {
     let showsControls: Bool
     let showsRecovery: Bool
 
-    init(state: RecordingState, isHovering: Bool) {
+    init(state: RecordingState, isHovering: Bool, showsLiveWords: Bool) {
         showsRecovery = state.capsulePresentation == .error
         showsControls = isHovering && !showsRecovery
-        width = showsRecovery ? 280 : (isHovering ? 236 : 144)
+        if showsRecovery {
+            width = 280
+        } else if showsLiveWords {
+            width = showsControls ? 320 : 260
+        } else {
+            width = showsControls ? 268 : 144
+        }
     }
 }
 
@@ -19,12 +25,17 @@ struct RecordingHUDView: View {
     @State private var isHovering = false
 
     var body: some View {
-        let layout = CapsuleLayout(state: model.recordingState, isHovering: isHovering)
+        let liveWords = showsLiveWords
+        let layout = CapsuleLayout(
+            state: model.recordingState,
+            isHovering: isHovering,
+            showsLiveWords: liveWords
+        )
         Group {
             if let failure {
                 recoveryContent(failure)
             } else {
-                standardContent(showsControls: layout.showsControls)
+                standardContent(showsControls: layout.showsControls, showsLiveWords: liveWords)
             }
         }
         .padding(.horizontal, 12)
@@ -41,14 +52,17 @@ struct RecordingHUDView: View {
         .contextMenu { capsuleMenu }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("NODAYSIDLE Voice: \(model.recordingState.label)")
-        .accessibilityValue(model.statusMessage)
+        .accessibilityValue(accessibilityValue)
         .preferredColorScheme(model.appearance.colorScheme)
     }
 
-    private func standardContent(showsControls: Bool) -> some View {
+    private func standardContent(showsControls: Bool, showsLiveWords: Bool) -> some View {
         HStack(spacing: 9) {
-            if showsControls { modeMenu }
-            stateContent
+            if showsControls {
+                modeMenu
+                languageChip
+            }
+            stateContent(showsLiveWords: showsLiveWords)
                 .frame(maxWidth: .infinity)
             if showsControls {
                 Button(action: model.toggleRecording) {
@@ -71,37 +85,43 @@ struct RecordingHUDView: View {
         }
     }
 
-    @ViewBuilder private var stateContent: some View {
+    @ViewBuilder private func stateContent(showsLiveWords: Bool) -> some View {
         switch model.recordingState {
         case .idle:
-            Label("Ready", systemImage: "mic.fill")
-                .font(.caption.weight(.semibold))
+            Image(systemName: "mic.fill")
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
         case .arming:
-            HStack(spacing: 7) {
-                ProgressView().controlSize(.small)
-                Text("Arming").font(.caption.weight(.semibold))
-            }
+            ProgressView().controlSize(.small)
         case .recording:
-            waveform
-        case .transcribing:
-            processingLabel("Transcribing")
-        case .refining:
-            processingLabel("Polishing")
-        case .inserting:
-            processingLabel("Inserting")
+            if showsLiveWords {
+                liveWordsRow
+            } else {
+                waveform
+            }
+        case .transcribing, .refining, .inserting:
+            ProgressView().controlSize(.small)
         case .completed:
-            Label("Done", systemImage: "checkmark.circle.fill")
-                .font(.caption.weight(.semibold))
+            Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(VoiceStyle.success)
+                .accessibilityHidden(true)
         case .failed:
             EmptyView()
         }
     }
 
-    private func processingLabel(_ title: String) -> some View {
-        HStack(spacing: 7) {
-            ProgressView().controlSize(.small)
-            Text(title).font(.caption.weight(.semibold))
+    private var liveWordsRow: some View {
+        HStack(spacing: 8) {
+            waveform.frame(width: 52)
+            Text(model.interimTranscript)
+                .font(.caption)
+                .lineLimit(1)
+                .truncationMode(.head)
+                .foregroundStyle(.primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityLabel("Live transcript")
+                .accessibilityValue(model.interimTranscript)
         }
     }
 
@@ -136,6 +156,32 @@ struct RecordingHUDView: View {
         .fixedSize()
         .help("Mode: \(model.selectedMode.name)")
         .accessibilityLabel("Mode: \(model.selectedMode.name)")
+    }
+
+    private var languageChip: some View {
+        Menu {
+            ForEach(OutputLanguage.allCases) { language in
+                Button {
+                    model.setOutputLanguage(language)
+                } label: {
+                    if model.outputLanguage == language {
+                        Label(language.chipLabel, systemImage: "checkmark")
+                    } else {
+                        Text(language.chipLabel)
+                    }
+                }
+            }
+        } label: {
+            Text(model.outputLanguage.chipLabel)
+                .font(.caption2.weight(.bold))
+                .padding(.horizontal, 7)
+                .padding(.vertical, 4)
+                .background(VoiceStyle.card, in: Capsule())
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("Output language")
+        .accessibilityLabel("Output language: \(model.outputLanguage.chipLabel)")
     }
 
     private func recoveryContent(_ failure: DictationFailure) -> some View {
@@ -206,6 +252,17 @@ struct RecordingHUDView: View {
     private var failure: DictationFailure? {
         if case .failed(let failure) = model.recordingState { return failure }
         return nil
+    }
+
+    /// Live words only while Deepgram is the active engine and interim text exists.
+    private var showsLiveWords: Bool {
+        guard case .recording = model.recordingState else { return false }
+        return model.activeTranscriptionEngine == .deepgram && !model.interimTranscript.isEmpty
+    }
+
+    private var accessibilityValue: String {
+        if showsLiveWords { return model.interimTranscript }
+        return model.statusMessage
     }
 
     private var stateColor: Color {

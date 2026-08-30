@@ -229,8 +229,6 @@ private struct ProviderSettingsView: View {
                     Toggle("Refine completed transcripts", isOn: $model.refinementEnabled)
                     TextField("Text model ID", text: $model.refinementModel)
                         .disabled(!model.refinementEnabled)
-                    Text("Cloud audio or text leaves this Mac only for the active request. Credentials stay in Keychain and are never stored with history.")
-                        .font(.caption).foregroundStyle(.secondary)
                 }
             }
         }
@@ -296,8 +294,6 @@ private struct LocalModelSettingsView: View {
     var body: some View {
         @Bindable var model = model
         VStack(alignment: .leading, spacing: 12) {
-            Text("Downloads are explicit, validated, and stored in Application Support. One model can be resident at a time.")
-                .font(.callout).foregroundStyle(.secondary)
             ForEach(model.localModels, id: \.id) { localModel in
                 SectionCard {
                     VStack(alignment: .leading, spacing: 10) {
@@ -314,8 +310,6 @@ private struct LocalModelSettingsView: View {
                                 }
                                 Text("\(localModel.detail) · \(localModel.size)")
                                     .font(.caption).foregroundStyle(.secondary)
-                                Text("Source: argmaxinc/whisperkit-coreml")
-                                    .font(.caption2).foregroundStyle(.secondary)
                             }
                             Spacer()
                             if model.installedModelIDs.contains(localModel.id) {
@@ -327,7 +321,7 @@ private struct LocalModelSettingsView: View {
                             }
                         }
                         if let progress = model.modelDownloadProgress[localModel.id] {
-                            ProgressView(value: progress) { Text("Downloading and validating") }
+                            ProgressView(value: progress) { Text("Downloading") }
                                 .accessibilityValue(progress.formatted(.percent.precision(.fractionLength(0))))
                         }
                     }
@@ -355,17 +349,22 @@ private struct ModeSettingsView: View {
                         ForEach(model.modes, id: \.id) { Label($0.name, systemImage: $0.symbol).tag($0.id) }
                     }
                     if let selectedMode {
-                        Text(selectedMode.instruction ?? "No refinement instruction; the raw transcript is preserved.")
+                        Text(selectedMode.instruction ?? "Raw transcript, no refinement.")
                             .font(.callout).foregroundStyle(.secondary)
+                        Picker("Language", selection: selectedLanguageBinding) {
+                            ForEach(OutputLanguage.allCases) { Text($0.chipLabel).tag($0) }
+                        }
                         Button("Use for an application…") { model.assignApplicationRule(selectedMode) }
                     }
                 }
             }
             SectionCard {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("New custom mode").font(.headline)
+                    Text("Custom mode").font(.headline)
                     TextField("Name", text: $name)
-                    TextField("Output language", text: $outputLanguage)
+                    Picker("Language", selection: $outputLanguage) {
+                        ForEach(OutputLanguage.allCases) { Text($0.chipLabel).tag($0.rawValue) }
+                    }
                     TextField("Instruction", text: $instruction, axis: .vertical)
                         .lineLimit(3...6)
                     Picker("Transcription engine", selection: $engine) {
@@ -376,7 +375,7 @@ private struct ModeSettingsView: View {
                         Text("Use General setting").tag("")
                         ForEach(InsertionBehavior.allCases) { Text($0.rawValue).tag($0.rawValue) }
                     }
-                    TextField("Optional OpenRouter refinement model", text: $refinementModel)
+                    TextField("Optional refinement model", text: $refinementModel)
                     HStack {
                         Spacer()
                         Button("Save mode") { save() }
@@ -391,6 +390,31 @@ private struct ModeSettingsView: View {
     }
 
     private var selectedMode: DictationMode? { model.modes.first { $0.id == selectedModeID } }
+
+    private var selectedLanguageBinding: Binding<OutputLanguage> {
+        Binding(
+            get: {
+                OutputLanguage.resolve(selectedMode?.outputLanguage ?? model.outputLanguage.rawValue)
+            },
+            set: { language in
+                if selectedModeID == model.selectedMode.id {
+                    model.setOutputLanguage(language)
+                } else if var mode = selectedMode {
+                    mode = DictationMode(
+                        id: mode.id,
+                        name: mode.name,
+                        symbol: mode.symbol,
+                        instruction: mode.instruction,
+                        outputLanguage: language.rawValue,
+                        engine: mode.engine,
+                        refinementModel: mode.refinementModel,
+                        insertion: mode.insertion
+                    )
+                    model.saveMode(mode)
+                }
+            }
+        )
+    }
 
     private func save() {
         let mode = DictationMode(
@@ -420,8 +444,8 @@ private struct VocabularySettingsView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("Import vocabulary migration").font(.headline)
-                            Text("Choose the private JSON file explicitly. It is read locally, never bundled, and never deleted.")
+                            Text("Import vocabulary").font(.headline)
+                            Text("Local JSON only. Source file is not deleted.")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
@@ -571,11 +595,10 @@ private struct PrivacySettingsView: View {
             }
             SectionCard {
                 VStack(alignment: .leading, spacing: 12) {
-                    Label("Provider keys are stored only in macOS Keychain.", systemImage: "key.fill")
-                    Label("Local transcription stays offline after an explicit model download.", systemImage: "macbook")
-                    Label("Cloud audio is sent only to the engine selected for the active request.", systemImage: "cloud")
-                    Label("Temporary audio is deleted after success or discard; completed history stores no audio.", systemImage: "trash")
-                    Label("No account, analytics, background daemon, or mandatory backend.", systemImage: "hand.raised.fill")
+                    Label("Keys stay in Keychain.", systemImage: "key.fill")
+                    Label("Local mode is offline after download.", systemImage: "macbook")
+                    Label("Cloud audio is sent only for the active request.", systemImage: "cloud")
+                    Label("Temporary audio is deleted after use.", systemImage: "trash")
                 }
                 .fixedSize(horizontal: false, vertical: true)
             }

@@ -5,19 +5,9 @@ struct MenuPanelView: View {
 
     var body: some View {
         @Bindable var model = model
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             header
             readiness
-
-            Button(action: model.toggleRecording) {
-                Label(recordButtonTitle, systemImage: recording ? "stop.fill" : "mic.fill")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity, minHeight: 32)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(recording ? .secondary : VoiceStyle.coral)
-            .keyboardShortcut(.return, modifiers: [])
-            .accessibilityHint("The focused application remains the insertion target.")
 
             SectionCard {
                 VStack(alignment: .leading, spacing: 10) {
@@ -35,6 +25,13 @@ struct MenuPanelView: View {
                             Text("Engine").foregroundStyle(.secondary)
                             Picker("Engine", selection: $model.selectedEngine) {
                                 ForEach(TranscriptionEngine.allCases) { Text($0.rawValue).tag($0) }
+                            }
+                            .labelsHidden()
+                        }
+                        GridRow {
+                            Text("Language").foregroundStyle(.secondary)
+                            Picker("Language", selection: languageBinding) {
+                                ForEach(OutputLanguage.allCases) { Text($0.chipLabel).tag($0) }
                             }
                             .labelsHidden()
                         }
@@ -60,15 +57,17 @@ struct MenuPanelView: View {
 
     private var header: some View {
         HStack(alignment: .center) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("NODAYSIDLE")
-                    .font(.caption2.weight(.bold))
-                    .tracking(2)
-                    .foregroundStyle(VoiceStyle.coral)
-                Text("Voice")
-                    .font(.title2.weight(.semibold))
-            }
+            Text("Control Center")
+                .font(.headline)
             Spacer()
+            Button(action: model.toggleRecording) {
+                Image(systemName: recording ? "stop.fill" : "mic.fill")
+                    .frame(width: 28, height: 28)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(recording ? VoiceStyle.coral : .primary)
+            .help(recordButtonTitle)
+            .accessibilityLabel(recordButtonTitle)
             Button(action: model.openControlCenter) {
                 Image(systemName: "xmark").frame(width: 24, height: 24)
             }
@@ -76,6 +75,13 @@ struct MenuPanelView: View {
             .help("Close Control Center")
             .accessibilityLabel("Close Control Center")
         }
+    }
+
+    private var languageBinding: Binding<OutputLanguage> {
+        Binding(
+            get: { model.outputLanguage },
+            set: { model.setOutputLanguage($0) }
+        )
     }
 
     @ViewBuilder private var readiness: some View {
@@ -103,7 +109,6 @@ struct MenuPanelView: View {
                 Circle().fill(statusColor).frame(width: 7, height: 7)
                 Text(model.statusMessage).font(.caption).lineLimit(2)
                 Spacer()
-                Text(model.recordingState.label).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
             }
             .accessibilityElement(children: .combine)
         }
@@ -117,14 +122,10 @@ struct MenuPanelView: View {
                 Button("History", action: model.openHistory).buttonStyle(.plain)
             }
             if model.history.isEmpty {
-                VStack(spacing: 7) {
-                    Image(systemName: "waveform").font(.title2).foregroundStyle(.secondary)
-                    Text("No dictations yet").font(.headline)
-                    Text(model.historyEnabled ? "Completed transcripts stay locally on this Mac." : "History is disabled in Settings.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, minHeight: 110)
-                .accessibilityElement(children: .combine)
+                Text(model.historyEnabled ? "No recent transcripts." : "History is off.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
             } else {
                 ForEach(model.history.prefix(3)) { item in
                     HStack(spacing: 10) {
@@ -168,9 +169,9 @@ struct MenuPanelView: View {
 
     private var recordButtonTitle: String {
         switch model.recordingState {
-        case .idle, .completed, .failed: "Start dictation"
-        case .arming, .recording: "Finish dictation"
-        case .transcribing, .refining, .inserting: "Working…"
+        case .idle, .completed, .failed: "Record"
+        case .arming, .recording: "Stop"
+        case .transcribing, .refining, .inserting: "Working"
         }
     }
 
@@ -178,7 +179,7 @@ struct MenuPanelView: View {
         let engine = model.selectedMode.engine ?? model.selectedEngine
         return engine.isLocal
             ? "Audio stays on this Mac."
-            : "Audio is sent to \(engine.rawValue) only for this transcription."
+            : "Audio goes to \(engine.rawValue) for this request."
     }
 
     private var statusColor: Color {
@@ -198,10 +199,7 @@ struct TranscriptPreviewView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Review transcript").font(.title2.weight(.semibold))
-                    Text("Nothing is inserted until you confirm.").font(.caption).foregroundStyle(.secondary)
-                }
+                Text("Review").font(.title3.weight(.semibold))
                 Spacer()
                 Button(action: model.dismissPreview) { Image(systemName: "xmark") }
                     .buttonStyle(.plain)
@@ -215,9 +213,9 @@ struct TranscriptPreviewView: View {
                 .overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(VoiceStyle.border) }
                 .accessibilityLabel("Completed transcript")
             HStack {
-                Button("Keep without inserting", action: model.dismissPreview)
+                Button("Keep", action: model.dismissPreview)
                 Spacer()
-                Button("Insert at previous cursor") {
+                Button("Insert") {
                     model.previewText = draft
                     model.confirmPreview()
                 }

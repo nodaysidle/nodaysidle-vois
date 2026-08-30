@@ -35,6 +35,26 @@ import Testing
 }
 
 @MainActor
+@Test func vocabularyHintsAreStoredSeparatelyFromReplacements() throws {
+    let container = try VoiceData.makeContainer(inMemory: true)
+    let store = VocabularyStore(container: container)
+    let preview = VocabularyImportPreview(
+        source: "test",
+        sourceVocabularyCount: 2,
+        sourceReplacementCount: 1,
+        uniqueVocabulary: ["Codex", "SwiftData"],
+        replacements: [VocabularyReplacement(id: "1", original: "open router", replacement: "OpenRouter")],
+        duplicateVocabularyCount: 0,
+        conflicts: []
+    )
+    let inserted = try store.importPreview(preview)
+    #expect(inserted.vocabulary == 2)
+    #expect(inserted.replacements == 1)
+    #expect(try store.hints() == ["Codex", "SwiftData"])
+    #expect(try store.replacements().map(\.replacement) == ["OpenRouter"])
+}
+
+@MainActor
 @Test func builtInAndCustomModesResolvePerApplicationRules() throws {
     let container = try VoiceData.makeContainer(inMemory: true)
     try VoiceData.seedBuiltInModes(in: container)

@@ -1,5 +1,47 @@
 import Foundation
 
+enum OutputLanguage: String, CaseIterable, Identifiable, Sendable {
+    case automatic = "Automatic"
+    case english = "EN"
+    case italian = "IT"
+    case slovenian = "SL"
+
+    var id: String { rawValue }
+    var chipLabel: String { rawValue }
+
+    /// WhisperKit / OpenAI-style language code. `nil` means detect automatically.
+    var whisperCode: String? {
+        switch self {
+        case .automatic: nil
+        case .english: "en"
+        case .italian: "it"
+        case .slovenian: "sl"
+        }
+    }
+
+    /// Deepgram `language` query value. `nil` omits the parameter (provider default).
+    var deepgramCode: String? {
+        switch self {
+        case .automatic: nil
+        case .english: "en"
+        case .italian: "it"
+        case .slovenian: "sl"
+        }
+    }
+
+    static func resolve(_ stored: String) -> OutputLanguage {
+        let trimmed = stored.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let exact = OutputLanguage(rawValue: trimmed) { return exact }
+        switch trimmed.lowercased() {
+        case "", "auto", "automatic", "detect": return .automatic
+        case "en", "en-us", "en-gb", "english": return .english
+        case "it", "it-it", "italian", "italiano": return .italian
+        case "sl", "sl-si", "slovenian", "slovene", "slovenščina", "slovenscina": return .slovenian
+        default: return .automatic
+        }
+    }
+}
+
 enum CapsulePresentation: Equatable, Sendable {
     case ready
     case arming
@@ -43,14 +85,13 @@ enum RecordingState: Equatable, Sendable {
     case completed
     case failed(DictationFailure)
 
+    /// Accessibility / status labels only — the capsule UI stays wordless.
     var label: String {
         switch self {
-        case .idle: "Ready"
-        case .arming: "Getting ready"
-        case .recording: "Listening"
-        case .transcribing: "Transcribing"
-        case .refining: "Polishing"
-        case .inserting: "Inserting"
+        case .idle: "Idle"
+        case .arming: "Preparing"
+        case .recording: "Recording"
+        case .transcribing, .refining, .inserting: "Processing"
         case .completed: "Done"
         case .failed: "Needs attention"
         }

@@ -79,6 +79,7 @@ final class AppModel {
     @ObservationIgnored var chooseVocabularyAction: (() -> Void)?
     @ObservationIgnored var importVocabularyAction: (() -> Void)?
     @ObservationIgnored var saveModeAction: ((DictationMode) -> Void)?
+    @ObservationIgnored var setOutputLanguageAction: ((OutputLanguage) -> Void)?
     @ObservationIgnored var assignApplicationRuleAction: ((DictationMode) -> Void)?
     @ObservationIgnored var searchHistoryAction: ((String) -> Void)?
     @ObservationIgnored var historyTextAction: ((UUID) -> String?)?
@@ -91,6 +92,8 @@ final class AppModel {
     @ObservationIgnored var rememberTargetAction: (() -> Void)?
 
     var recordingState: RecordingState = .idle
+    /// Engine for the in-flight job; used for Deepgram-only live capsule words.
+    var activeTranscriptionEngine: TranscriptionEngine?
     var selectedMode: DictationMode {
         didSet { defaults.set(selectedMode.id, forKey: PreferenceKey.mode) }
     }
@@ -143,7 +146,9 @@ final class AppModel {
     var historySearch = ""
     var showHUD = false
     var audioLevels: [Float] = []
-    var statusMessage = "Ready for dictation"
+    /// Live interim words from Deepgram only. Never inserted/pasted.
+    var interimTranscript = ""
+    var statusMessage = "Ready"
     var lastCompletedText: String?
     var previewText: String?
     private(set) var pushToTalkHotkey: HotkeyDescriptor
@@ -222,6 +227,35 @@ final class AppModel {
         selectedMode = modes.first { $0.id == id } ?? modes.first ?? DictationMode.defaults[0]
     }
 
+    var outputLanguage: OutputLanguage {
+        OutputLanguage.resolve(selectedMode.outputLanguage)
+    }
+
+    func setOutputLanguage(_ language: OutputLanguage) {
+        if let setOutputLanguageAction {
+            setOutputLanguageAction(language)
+            return
+        }
+        applyOutputLanguage(language)
+    }
+
+    func applyOutputLanguage(_ language: OutputLanguage) {
+        let mode = selectedMode
+        selectedMode = DictationMode(
+            id: mode.id,
+            name: mode.name,
+            symbol: mode.symbol,
+            instruction: mode.instruction,
+            outputLanguage: language.rawValue,
+            engine: mode.engine,
+            refinementModel: mode.refinementModel,
+            insertion: mode.insertion
+        )
+        if let index = modes.firstIndex(where: { $0.id == mode.id }) {
+            modes[index] = selectedMode
+        }
+    }
+
     func setHUDVisible(_ visible: Bool) {
         showHUD = visible
         hudVisibilityHandler?(visible)
@@ -233,6 +267,8 @@ final class AppModel {
         if audioLevels.count == 13 { audioLevels.removeFirst() }
         audioLevels.append(min(max(level, 0), 1))
     }
+
+    func clearInterimTranscript() { interimTranscript = "" }
 
     func openControlCenter() {
         rememberTargetAction?()
