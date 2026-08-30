@@ -49,7 +49,36 @@ import Testing
     #expect(OutputLanguage.resolve("SL").whisperCode == "sl")
     #expect(OutputLanguage.resolve("auto").whisperCode == nil)
     #expect(OutputLanguage.resolve("Automatic").deepgramCode == "multi")
+    #expect(OutputLanguage.resolve("EN").refinementName == "English")
+    #expect(OutputLanguage.resolve("Automatic").refinementName == nil)
     #expect(OutputLanguage.allCases.map(\.chipLabel) == ["Automatic", "EN", "IT", "SL"])
+}
+
+@Test func deepgramIsPreferredOnlyWhenKeyedAndLocalModelMissing() {
+    #expect(AppCoordinator.shouldPreferDeepgram(
+        keySaved: true,
+        engine: .localWhisper,
+        installedModelIDs: [],
+        selectedLocalModelID: "base"
+    ))
+    #expect(!AppCoordinator.shouldPreferDeepgram(
+        keySaved: true,
+        engine: .localWhisper,
+        installedModelIDs: ["base"],
+        selectedLocalModelID: "base"
+    ))
+    #expect(!AppCoordinator.shouldPreferDeepgram(
+        keySaved: false,
+        engine: .localWhisper,
+        installedModelIDs: [],
+        selectedLocalModelID: "base"
+    ))
+    #expect(!AppCoordinator.shouldPreferDeepgram(
+        keySaved: true,
+        engine: .deepgram,
+        installedModelIDs: [],
+        selectedLocalModelID: "base"
+    ))
 }
 
 @Test func runtimeErrorsMapToActionableRecoveryStates() {

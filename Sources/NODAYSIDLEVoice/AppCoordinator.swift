@@ -115,6 +115,9 @@ final class AppCoordinator {
         model.saveModeAction = { [weak self] in self?.saveMode($0) }
         model.setOutputLanguageAction = { [weak self] in self?.setOutputLanguage($0) }
         model.assignApplicationRuleAction = { [weak self] in self?.chooseApplication(for: $0) }
+        model.prepareEngineAction = { [weak self] in
+            Task { await self?.warmLocalModelIfNeeded() }
+        }
         model.searchHistoryAction = { [weak self] in self?.searchHistory($0) }
         model.historyTextAction = { [weak self] in try? self?.historyStore.text(for: $0) }
         model.editHistoryAction = { [weak self] id, text in self?.editHistory(id, text: text) }
@@ -240,10 +243,22 @@ final class AppCoordinator {
     }
 
     /// Prefer Deepgram when a key is already saved and the user is still on Local without an installed model.
+    nonisolated static func shouldPreferDeepgram(
+        keySaved: Bool,
+        engine: TranscriptionEngine,
+        installedModelIDs: Set<String>,
+        selectedLocalModelID: String
+    ) -> Bool {
+        keySaved && engine == .localWhisper && !installedModelIDs.contains(selectedLocalModelID)
+    }
+
     private func preferDeepgramWhenKeyedIfNeeded() {
-        guard model.deepgramKeySaved else { return }
-        guard model.selectedEngine == .localWhisper else { return }
-        guard !model.installedModelIDs.contains(model.selectedLocalModelID) else { return }
+        guard Self.shouldPreferDeepgram(
+            keySaved: model.deepgramKeySaved,
+            engine: model.selectedEngine,
+            installedModelIDs: model.installedModelIDs,
+            selectedLocalModelID: model.selectedLocalModelID
+        ) else { return }
         model.selectedEngine = .deepgram
     }
 
@@ -304,8 +319,8 @@ final class AppCoordinator {
 
     private func processedText(_ rawText: String, job: Job) async throws -> String {
         var text = VocabularyImporter.apply(try vocabularyStore.replacements(), to: rawText)
-        let languageInstruction = job.mode.outputLanguage == "Automatic"
-            ? nil : "Write the result in \(job.mode.outputLanguage)."
+        let language = OutputLanguage.resolve(job.mode.outputLanguage)
+        let languageInstruction = language.refinementName.map { "Write the result in \($0)." }
         let instruction = [job.mode.instruction, languageInstruction].compactMap { $0 }.joined(separator: " ")
         if job.refinementEnabled, !instruction.isEmpty,
            !job.refinementModel.isEmpty,

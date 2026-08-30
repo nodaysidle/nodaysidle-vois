@@ -35,7 +35,13 @@ private actor RequestCapture {
     #expect(try DeepgramEngine.parseUpdate(final) == .final("Final text."))
 }
 
-@Test func openRouterSTTBuildsBoundedBase64JSONWithoutPersistingCredential() throws {
+@Test func deepgramInterimNeverCountsAsInsertableFinal() throws {
+    let interim = Data(#"{"type":"Results","is_final":false,"channel":{"alternatives":[{"transcript":"do not paste this"}]}}"#.utf8)
+    let final = Data(#"{"type":"Results","is_final":true,"channel":{"alternatives":[{"transcript":"paste only this"}]}}"#.utf8)
+    #expect(try DeepgramEngine.parseResult(interim) == nil)
+    #expect(try DeepgramEngine.parseUpdate(interim) == .interim("do not paste this"))
+    #expect(try DeepgramEngine.parseResult(final) == "paste only this")
+}
     let request = try OpenRouterSTTEngine.request(
         audio: Data([0, 1, 2, 3]),
         format: "wav",

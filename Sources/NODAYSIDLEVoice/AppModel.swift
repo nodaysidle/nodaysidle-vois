@@ -90,6 +90,7 @@ final class AppModel {
     @ObservationIgnored var copyHistoryAction: ((UUID) -> Void)?
     @ObservationIgnored var repasteHistoryAction: ((UUID) -> Void)?
     @ObservationIgnored var rememberTargetAction: (() -> Void)?
+    @ObservationIgnored var prepareEngineAction: (() -> Void)?
 
     var recordingState: RecordingState = .idle
     /// Engine for the in-flight job; used for Deepgram-only live capsule words.
@@ -98,13 +99,19 @@ final class AppModel {
         didSet { defaults.set(selectedMode.id, forKey: PreferenceKey.mode) }
     }
     var selectedEngine: TranscriptionEngine {
-        didSet { defaults.set(selectedEngine.rawValue, forKey: PreferenceKey.engine) }
+        didSet {
+            defaults.set(selectedEngine.rawValue, forKey: PreferenceKey.engine)
+            prepareEngineAction?()
+        }
     }
     var insertionBehavior: InsertionBehavior {
         didSet { defaults.set(insertionBehavior.rawValue, forKey: PreferenceKey.insertion) }
     }
     var selectedLocalModelID: String {
-        didSet { defaults.set(selectedLocalModelID, forKey: PreferenceKey.localModel) }
+        didSet {
+            defaults.set(selectedLocalModelID, forKey: PreferenceKey.localModel)
+            prepareEngineAction?()
+        }
     }
     var openRouterSTTModel: String {
         didSet { defaults.set(openRouterSTTModel, forKey: PreferenceKey.openRouterModel) }

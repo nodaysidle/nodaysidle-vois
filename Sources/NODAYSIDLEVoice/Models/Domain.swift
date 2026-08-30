@@ -9,6 +9,16 @@ enum OutputLanguage: String, CaseIterable, Identifiable, Sendable {
     var id: String { rawValue }
     var chipLabel: String { rawValue }
 
+    /// Human name for optional LLM refinement instructions.
+    var refinementName: String? {
+        switch self {
+        case .automatic: nil
+        case .english: "English"
+        case .italian: "Italian"
+        case .slovenian: "Slovenian"
+        }
+    }
+
     /// WhisperKit / OpenAI-style language code. `nil` means detect automatically.
     var whisperCode: String? {
         switch self {
