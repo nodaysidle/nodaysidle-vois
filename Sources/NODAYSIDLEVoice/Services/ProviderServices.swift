@@ -341,9 +341,11 @@ actor DeepgramEngine {
                     if let update = try Self.parseUpdate(data) {
                         switch update {
                         case .interim(let text):
-                            onInterim?(text)
+                            let display = parts.isEmpty ? text : parts.joined(separator: " ") + " " + text
+                            onInterim?(display)
                         case .final(let text):
                             parts.append(text)
+                            onInterim?(parts.joined(separator: " "))
                         }
                     }
                     if envelope.fromFinalize == true {

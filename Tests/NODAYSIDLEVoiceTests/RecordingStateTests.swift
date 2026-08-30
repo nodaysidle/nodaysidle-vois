@@ -48,6 +48,7 @@ import Testing
     #expect(OutputLanguage.resolve("Italian").deepgramCode == "it")
     #expect(OutputLanguage.resolve("SL").whisperCode == "sl")
     #expect(OutputLanguage.resolve("auto").whisperCode == nil)
+    #expect(OutputLanguage.resolve("Automatic").deepgramCode == "multi")
     #expect(OutputLanguage.allCases.map(\.chipLabel) == ["Automatic", "EN", "IT", "SL"])
 }
 

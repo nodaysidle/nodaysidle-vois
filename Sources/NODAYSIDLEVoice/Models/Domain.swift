@@ -19,10 +19,10 @@ enum OutputLanguage: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// Deepgram `language` query value. `nil` omits the parameter (provider default).
+    /// Deepgram `language` query value. Automatic uses multilingual Nova-3.
     var deepgramCode: String? {
         switch self {
-        case .automatic: nil
+        case .automatic: "multi"
         case .english: "en"
         case .italian: "it"
         case .slovenian: "sl"
