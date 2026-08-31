@@ -1,8 +1,16 @@
 <div align="center">
   <img src="Assets/AppIcon.png" width="144" alt="NODAYSIDLE Voice app icon">
   <h1>NODAYSIDLE Voice</h1>
-  <p><strong>Native, hotkey-first dictation for macOS.</strong></p>
-  <p>Speak from anywhere. Keep transcription local, or bring your own cloud provider.</p>
+  <p><strong>Native menu-bar dictation for macOS.</strong></p>
+  <p>Hold → speak → release. Only finished text is inserted.</p>
+
+  <p>
+    <a href="https://github.com/nodaysidle/nodaysidle-vois/releases/download/v0.2.0/NODAYSIDLE-Voice-0.2.0.dmg"><strong>Download v0.2.0 DMG</strong></a>
+    ·
+    <a href="https://github.com/nodaysidle/nodaysidle-vois/releases/tag/v0.2.0">v0.2.0 release</a>
+    ·
+    <a href="https://github.com/nodaysidle/nodaysidle-vois/releases">All releases</a>
+  </p>
 
   <p>
     <img src="https://img.shields.io/badge/macOS-14%2B-111111?logo=apple" alt="macOS 14 or later">
@@ -14,77 +22,105 @@
 
 <table>
   <tr>
-    <td width="54%" align="center"><img src="Artifacts/UI-Audit/01-control-center-dark.png" alt="NODAYSIDLE Voice control center"></td>
-    <td width="46%" align="center"><img src="Artifacts/UI-Audit/09-capsule-recording-dark.png" alt="Compact recording capsule and modes"></td>
+    <td width="54%" align="center"><img src="Artifacts/UI-Audit/01-control-center-dark.png" alt="Control Center"></td>
+    <td width="46%" align="center"><img src="Artifacts/UI-Audit/09-capsule-recording-dark.png" alt="Recording capsule"></td>
   </tr>
 </table>
 
-NODAYSIDLE Voice is a native macOS menu-bar app built around one fast interaction: hold a shortcut, speak, release, and place only the completed transcript at the previous cursor. Starting dictation never opens the control center or steals focus with a normal window.
+macOS only (Apple silicon). Native SwiftUI/AppKit menu-bar app — not iOS, not Android, not a web app.
 
-## Download
+## The journey
 
-[**Download NODAYSIDLE Voice v0.1.0**](https://github.com/nodaysidle/nodaysidle-vois/releases/download/v0.1.0/NODAYSIDLE-Voice-0.1.0.dmg)
+One loop:
 
-Requirements: macOS 14 Sonoma or later on Apple silicon.
+```text
+Hold ⌃ Space
+  → speak
+  → release
+  → transcribe (selected STT engine)
+  → insert finished text only at the previous cursor
+```
 
-1. Open the DMG and drag **NODAYSIDLE Voice** to **Applications**.
-2. The current release is ad-hoc signed and not Apple-notarized. On first launch, Control-click the app, choose **Open**, then confirm **Open**.
-3. Grant microphone access. Grant Accessibility access only when you want automatic insertion into other apps.
-4. Download a local Whisper model, or save your own provider key in Settings.
+| Stage | What happens |
+|---|---|
+| **Hold** | Capsule appears. Idle shows a mic; recording shows a waveform. |
+| **Speak** | Audio is captured. Deepgram streams live words in the capsule (display only). |
+| **Release** | Capsule shows a spinner while processing. |
+| **Insert** | Only the completed transcript is pasted or copied. Partials never go to the cursor. |
+| **Done** | Short success check, then the capsule hides (it does not stay idle on screen by default). |
 
-No model or API credential is bundled with the app.
+Dictation never opens or focuses Control Center. Escape cancels an active job.
 
-## Why it feels fast
+Languages: **Automatic** / **EN** / **IT** / **SL**, sent to the selected engine. Deepgram uses multilingual Nova-3 when Automatic is selected.
 
-- Global push-to-talk and toggle shortcuts backed by Carbon hotkeys
-- Tiny optional capsule with bounded live levels and hover controls
-- Final-text-only insertion—partial speech is never pasted
-- Per-app modes for raw text, messages, notes, email, coding, and formal writing
-- Searchable local history, vocabulary, replacements, and audio-file transcription
-- Native SwiftUI/AppKit surfaces that remain outside ordinary window tiling
+## What’s on screen (v0.2.0)
+
+| Surface | Role |
+|---|---|
+| **Capsule** | Compact HUD during recording/processing. Wordless chrome: mic / waveform / spinner. Hover controls; mode menu; Deepgram live words when streaming. |
+| **Control Center** | 380×520 secondary panel: start dictation, mode/engine/language, recent history. Opened explicitly — not by starting dictation. |
+| **Settings** | 980×680: general, hotkeys, providers, local models, history, vocabulary, privacy. |
+| **Menu bar** | Status item; opens Control Center. |
+
+Optional “keep capsule visible while idle” lives in Settings; default is off.
+
+## Engines / models
+
+BYOK. No API keys or models ship in the app.
+
+| Engine | Role | Network |
+|---|---|---|
+| **WhisperKit (local)** | On-device STT after you download a model. Kept warm when selected. | Offline after download |
+| **Deepgram Nova-3** | Streaming STT. Preferred when a Deepgram key is saved and no local model is installed. Live words in the capsule. | Active-request audio to Deepgram |
+| **OpenRouter STT** | Batch STT. Optional OpenRouter text refinement after the transcript. | Active-request audio/text to OpenRouter |
+
+Vocab hints bias Whisper prompts / Deepgram keyterms. Deterministic replacements run after the transcript. Keys live in Keychain and enter memory only for the active request.
+
+## Stack
+
+| Layer | Technology |
+|---|---|
+| UI | SwiftUI + focused AppKit bridges |
+| Hotkeys | Carbon global hotkeys |
+| Audio | AVFoundation |
+| Local STT | WhisperKit / Core ML |
+| Cloud STT | URLSession → Deepgram / OpenRouter |
+| Secrets | Security / Keychain |
+| History & settings | SwiftData (local) |
+
+## Install
+
+1. Download [`NODAYSIDLE-Voice-0.2.0.dmg`](https://github.com/nodaysidle/nodaysidle-vois/releases/download/v0.2.0/NODAYSIDLE-Voice-0.2.0.dmg) from the [v0.2.0 release](https://github.com/nodaysidle/nodaysidle-vois/releases/tag/v0.2.0).
+2. Open the DMG and drag **NODAYSIDLE Voice** to **Applications**.
+3. Ad-hoc signed, not notarized. First launch: Control-click the app → **Open** → confirm **Open**.
+4. Grant microphone access. Grant Accessibility only if you want automatic insertion into other apps.
+5. Download a local Whisper model, and/or save your own Deepgram / OpenRouter key in Settings.
+
+Requires **macOS 14+** on **Apple silicon**.
 
 ## Shortcuts
 
 | Action | Default |
-| --- | --- |
+|---|---|
 | Hold to dictate | `⌃ Space` |
 | Toggle dictation | `⇧ ⌥ Space` |
-| Cancel an active job | `Escape` |
+| Cancel | `Escape` |
 
-Shortcuts can be changed in Settings.
-
-## Transcription engines
-
-| Engine | Best for | Data boundary |
-| --- | --- | --- |
-| WhisperKit | Offline, local-first dictation | Audio stays on this Mac after an explicit model download |
-| Deepgram Nova-3 | Low-latency streaming | Active-request audio is sent directly to Deepgram using your Keychain-stored key |
-| OpenRouter STT | Batch transcription and optional refinement | Active-request audio/text is sent directly to OpenRouter using your Keychain-stored key |
-
-Only one local model is kept resident at a time, and it can be unloaded when idle.
+`⌃ Space` leaves `⌥ Space` free for Raycast. Change shortcuts in Settings → Hotkeys.
 
 ## Privacy
 
-- Provider keys live only in macOS Keychain.
-- Temporary microphone audio is owned by the active request and removed after success or discard.
-- Completed transcript history stays locally in SwiftData and stores no audio.
-- Cloud transfer is explicit in the selected engine and limited to the active operation.
-- `UserData/` is private, ignored by Git, and imported only through an explicit file choice.
+- Provider keys: Keychain only.
+- Temporary mic audio: owned by the active request; removed after success or discard.
+- Completed transcripts: local SwiftData; no audio stored with history.
+- Cloud transfer: only when you select a cloud engine, for that request.
+- Local Whisper: works offline after an explicit model download. Cloud engines need the network.
 
-## Verified compatibility
-
-The completed-text insertion path has GUI smoke coverage in:
-
-- Microsoft Edge
-- ChatGPT for macOS
-- Ghostty
-- TextEdit
-
-The automated smokes insert unique markers without submitting messages, navigating, or executing shell commands.
+No accounts, payments, or cloud sync of notes.
 
 ## Build from source
 
-Install Xcode Command Line Tools with Swift 6.2, then run:
+Xcode Command Line Tools with Swift 6.2:
 
 ```bash
 swift test
@@ -93,25 +129,30 @@ swift build -c release
 open "NODAYSIDLE Voice.app"
 ```
 
-Create the same distributable DMG used by GitHub Releases:
+DMG for GitHub Releases:
 
 ```bash
 ./Scripts/package_dmg.sh
 ```
 
-Artifacts are written to `dist/` with a matching `SHA256SUMS.txt`.
+Artifacts land in `dist/` with `SHA256SUMS.txt`. Version comes from `version.env`.
 
-## Project structure
+## Repository map
 
-- `Sources/NODAYSIDLEVoice/` — app lifecycle, UI, audio, providers, insertion, and persistence
-- `Tests/NODAYSIDLEVoiceTests/` — focused unit, storage, provider-boundary, audio, and GUI-smoke coverage
-- `Assets/` — original application and menu-bar artwork
-- `Scripts/` — deterministic app and DMG packaging
-- `PRD.md`, `ARD.md`, `TRD.md`, `TASKS.md` — product and implementation contracts
-
-## Release status
-
-Version `0.1.0` is an early public release. The app is ad-hoc signed rather than Developer ID signed/notarized, local models are downloaded separately, and cloud engines require your own provider credentials.
+```text
+nodaysidle-vois/
+├── Assets/                 # app + menu-bar artwork
+├── Artifacts/UI-Audit/     # UI screenshots
+├── Resources/              # bundled non-secret resources
+├── Scripts/                # package_app / package_dmg
+├── Sources/NODAYSIDLEVoice/
+│   ├── Models/             # domain + SwiftData
+│   ├── Services/           # audio, hotkeys, providers, Keychain
+│   └── Views/              # capsule, Control Center, Settings
+├── Tests/                  # focused unit + smoke coverage
+├── version.env             # MARKETING_VERSION / BUILD_NUMBER
+└── PRD.md / ARD.md / TRD.md / TASKS.md
+```
 
 ---
 
