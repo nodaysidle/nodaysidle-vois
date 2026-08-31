@@ -47,7 +47,7 @@ No model or API credential is bundled with the app.
 
 | Action | Default |
 | --- | --- |
-| Hold to dictate | `⌥ Space` |
+| Hold to dictate | `⌃ Space` |
 | Toggle dictation | `⇧ ⌥ Space` |
 | Cancel an active job | `Escape` |
 

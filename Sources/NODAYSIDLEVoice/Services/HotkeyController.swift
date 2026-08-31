@@ -6,7 +6,7 @@ struct HotkeyDescriptor: Codable, Equatable, Sendable {
     let keyCode: UInt32
     let modifiers: UInt32
 
-    static let pushToTalk = Self(keyCode: 49, modifiers: UInt32(optionKey))
+    static let pushToTalk = Self(keyCode: 49, modifiers: UInt32(controlKey))
     static let toggle = Self(keyCode: 49, modifiers: UInt32(optionKey | shiftKey))
 
     static func carbonModifiers(from flags: NSEvent.ModifierFlags) -> UInt32 {

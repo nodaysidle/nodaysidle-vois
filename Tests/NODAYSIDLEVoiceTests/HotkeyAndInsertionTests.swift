@@ -5,7 +5,7 @@ import Testing
 @testable import NODAYSIDLEVoice
 
 @Test func defaultHotkeysAreDistinctAndReadable() {
-    #expect(HotkeyDescriptor.pushToTalk.displayName == "⌥ Space")
+    #expect(HotkeyDescriptor.pushToTalk.displayName == "⌃ Space")
     #expect(HotkeyDescriptor.toggle.displayName == "⇧ ⌥ Space")
     #expect(HotkeyDescriptor.pushToTalk != HotkeyDescriptor.toggle)
 }
