@@ -186,7 +186,7 @@ final class AppModel {
         let savedRetention = defaults.object(forKey: PreferenceKey.retentionDays) as? Int ?? 30
         retentionDays = [0, 7, 30, 90, 365].contains(savedRetention) ? savedRetention : 30
         hudEnabled = defaults.object(forKey: PreferenceKey.hudEnabled) as? Bool ?? true
-        keepHUDVisibleWhenIdle = defaults.object(forKey: PreferenceKey.keepHUDVisible) as? Bool ?? false
+        keepHUDVisibleWhenIdle = defaults.object(forKey: PreferenceKey.keepHUDVisible) as? Bool ?? true
         soundsEnabled = defaults.object(forKey: PreferenceKey.soundsEnabled) as? Bool ?? true
         appearance = AppAppearance(rawValue: defaults.string(forKey: PreferenceKey.appearance) ?? "") ?? .dark
         pushToTalkHotkey = Self.savedHotkey(PreferenceKey.pushToTalk, defaults: defaults) ?? .pushToTalk
