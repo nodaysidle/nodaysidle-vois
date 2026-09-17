@@ -1,0 +1,26 @@
+# Hybrid release: CI writes the GitHub Release + notes.
+# Binaries are built locally on the Mac mini only — CI does not build or attach assets
+# (see Scripts/attach-release-asset.sh).
+name: Release on tag
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create GitHub Release (notes only)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: NODAYSIDLE Voice ${{ github.ref_name }}
+          generate_release_notes: true
+          draft: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
