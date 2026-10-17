@@ -91,10 +91,11 @@ Vocab hints bias Whisper prompts / Deepgram keyterms. Deterministic replacements
 ## Install
 
 1. Download [`NODAYSIDLE-Voice-0.2.0.dmg`](https://github.com/nodaysidle/nodaysidle-vois/releases/download/v0.2.0/NODAYSIDLE-Voice-0.2.0.dmg) from the [v0.2.0 release](https://github.com/nodaysidle/nodaysidle-vois/releases/tag/v0.2.0).
-2. Open the DMG and drag **NODAYSIDLE Voice** to **Applications**.
-3. Ad-hoc signed, not notarized. First launch: Control-click the app → **Open** → confirm **Open**.
-4. Grant microphone access. Grant Accessibility only if you want automatic insertion into other apps.
-5. Download a local Whisper model, and/or save your own Deepgram / OpenRouter key in Settings.
+2. Optional: verify the download. Its SHA-256 is `25b4536bbb11d8ba146737978eae8c225411b6ab7cd48c91d05d6f1ac938854b`, the same value listed in [`SHA256SUMS.txt`](https://github.com/nodaysidle/nodaysidle-vois/releases/download/v0.2.0/SHA256SUMS.txt) on the v0.2.0 release. Run `shasum -a 256 NODAYSIDLE-Voice-0.2.0.dmg` and compare.
+3. Open the DMG and drag **NODAYSIDLE Voice** to **Applications**.
+4. Ad-hoc signed, not notarized. First launch: Control-click the app → **Open** → confirm **Open**.
+5. Grant microphone access. Grant Accessibility only if you want automatic insertion into other apps.
+6. Download a local Whisper model, and/or save your own Deepgram / OpenRouter key in Settings.
 
 Requires **macOS 14+** on **Apple silicon**.
 
